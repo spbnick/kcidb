@@ -228,13 +228,13 @@ def validate_main():
     try:
         data = json.load(sys.stdin)
     except json.decoder.JSONDecodeError as err:
-        print(err, sys.stderr)
+        print(err, file=sys.stderr)
         return 1
 
     try:
         io_schema.validate(data)
     except jsonschema.exceptions.ValidationError as err:
-        print(err, sys.stderr)
+        print(err, file=sys.stderr)
         return 2
     return 0
 
@@ -253,13 +253,13 @@ def tests_validate_main():
     try:
         catalog = yaml.safe_load(sys.stdin)
     except yaml.YAMLError as err:
-        print(err, sys.stderr)
+        print(err, file=sys.stderr)
         return 1
 
     try:
         tests_schema.validate(catalog)
     except jsonschema.exceptions.ValidationError as err:
-        print(err, sys.stderr)
+        print(err, file=sys.stderr)
         return 2
 
     if args.urls:
@@ -267,7 +267,7 @@ def tests_validate_main():
             for test in catalog.values():
                 requests.head(test['home']).raise_for_status()
         except requests.RequestException as err:
-            print(err, sys.stderr)
+            print(err, file=sys.stderr)
             return 3
 
     return 0
