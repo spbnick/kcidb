@@ -52,12 +52,14 @@ setuptools.setup(
     ),
     entry_points=dict(
         console_scripts=[
-            "kcidb-init = kcidb:init_main",
-            "kcidb-cleanup = kcidb:cleanup_main",
             "kcidb-schema = kcidb:schema_main",
             "kcidb-validate = kcidb:validate_main",
             "kcidb-submit = kcidb:submit_main",
             "kcidb-query = kcidb:query_main",
+            "kcidb-db-init = kcidb:db_init_main",
+            "kcidb-db-cleanup = kcidb:db_cleanup_main",
+            "kcidb-db-load = kcidb:db_load_main",
+            "kcidb-db-query = kcidb:db_query_main",
             "kcidb-tests-validate = kcidb:tests_validate_main",
         ]
     )

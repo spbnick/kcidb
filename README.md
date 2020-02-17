@@ -1,11 +1,11 @@
 KCIDB
 =====
 
-Kcidb is a package for entering and querying data to/from the Linux Kernel CI
-common report database.
+Kcidb is a package for submitting and querying Linux Kernel CI reports,
+and for maintaining the service behind that.
 
-Setup
------
+Installation
+------------
 
 To install the package for the current user, run this command:
 
@@ -34,11 +34,45 @@ with:
 
     export PATH="$PATH":~/.local/bin
 
-BigQuery
---------
+Before you execute any of the tools make sure you have the path to your Google
+Cloud credentials stored in the `GOOGLE_APPLICATION_CREDENTIALS` variable.
+E.g.:
+
+    export GOOGLE_APPLICATION_CREDENTIALS=~/.credentials.json
+
+User guide
+----------
+
+### Submitting and querying
+
+To submit records use `kcidb-submit`, to query records - `kcidb-query`.
+Both use the same JSON schema on standard input and output respectively, which
+can be displayed by `kcidb-schema`. You can validate the data without
+submitting it using the `kcidb-validate` tool.
+
+### API
+
+You can use the `kcidb` module to do everything the command-line tools do.
+
+First, make sure you have the `GOOGLE_APPLICATION_CREDENTIALS` environment
+variable set and pointing at your Google Cloud credentials file. Then you can
+create the client with `kcidb.Client(<dataset_name>)` and call its `submit()`
+and `query()` methods.
+
+You can find the I/O schema `in kcidb.io_schema.JSON` and use
+`kcidb.io_schema.validate()` to validate your I/O data.
+
+See the source code for additional documentation.
+
+Administrator guide
+-------------------
+
+### BigQuery
 
 Kcidb uses Google BigQuery for data storage. To be able to store or query
 anything you need to create a BigQuery dataset.
+
+#### Setup
 
 The documentation to set up a BigQuery account with a data set and a token can
 be found here:
@@ -59,26 +93,12 @@ Alternatively, you may follow these quick steps:
   * Format: JSON
 8. "Create" to automatically download the JSON file with your credentials.
 
-
-Usage
------
-Before you execute any of the tools make sure you have the path to your
-BigQuery credentials stored in the `GOOGLE_APPLICATION_CREDENTIALS` variable.
-E.g.:
-
-    export GOOGLE_APPLICATION_CREDENTIALS=~/.bq.json
-
-To initialize the dataset, execute `kcidb-init -d <DATASET>`, where
+To initialize the dataset, execute `kcidb-db-init -d <DATASET>`, where
 `<DATASET>` is the name of the dataset to initialize.
 
-To submit records use `kcidb-submit`, to query records - `kcidb-query`.
-Both use the same JSON schema on standard input and output respectively, which
-can be displayed by `kcidb-schema`.
+To cleanup the dataset (remove the tables) use `kcidb-db-cleanup`.
 
-To cleanup the dataset (remove the tables) use `kcidb-cleanup`.
-
-Upgrading
----------
+#### Upgrading
 
 To upgrade the dataset schema, do the following.
 
@@ -96,7 +116,7 @@ To upgrade the dataset schema, do the following.
 
         bq mk --project_id=kernelci kernelci02
         # Using new-schema kcidb
-        kcidb-init -d kernelci02
+        kcidb-db-init -d kernelci02
 
 3. Switch all data submitters to using new-schema kcidb and the newly-created
    dataset.
@@ -104,24 +124,10 @@ To upgrade the dataset schema, do the following.
 4. Disable write access to the old dataset using BigQuery management console.
 
 5. Transfer data from the old dataset (named `kernelci01` here) to the new
-   dataset (named `kernelci02` here) using old-schema `kcidb-query` and
-   new-schema `kcidb-submit`.
+   dataset (named `kernelci02` here) using old-schema `kcidb-db-query` and
+   new-schema `kcidb-db-load`.
 
         # Using old-schema kcidb
-        kcidb-query -d kernelci01 > kernelci01.json
+        kcidb-db-query -d kernelci01 > kernelci01.json
         # Using new-schema kcidb
-        kcidb-submit -d kernelci02 < kernelci01.json
-
-API
----
-You can use the `kcidb` module to do everything the command-line tools do.
-
-First, make sure you have the `GOOGLE_APPLICATION_CREDENTIALS` environment
-variable set and pointing at the Google Cloud credentials file. Then you can
-create the client with `kcidb.Client(<dataset_name>)` and call its `init()`,
-`cleanup()`, `submit()` and `query()` methods.
-
-You can find the I/O schema `in kcidb.io_schema.JSON` and use
-`kcidb.io_schema.validate()` to validate your I/O data.
-
-See the source code for additional documentation.
+        kcidb-db-load -d kernelci02 < kernelci01.json

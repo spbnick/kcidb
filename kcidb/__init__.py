@@ -15,7 +15,7 @@ from kcidb import io_schema
 from kcidb import tests_schema
 
 
-class Client:
+class DBClient:
     """Kernel CI report database client"""
 
     def __init__(self, dataset_name):
@@ -101,12 +101,12 @@ class Client:
 
         return data
 
-    def submit(self, data):
+    def load(self, data):
         """
-        Submit data to the database.
+        Load data into the database.
 
         Args:
-            data:   The JSON data to submit to the database.
+            data:   The JSON data to load into the database.
                     Must adhere to the I/O schema (kcidb.io_schema.JSON).
         """
         def convert_node(node):
@@ -153,25 +153,47 @@ class Client:
                     ]))
 
 
-def query_main():
-    """Execute the kcidb-query command-line tool"""
-    description = \
-        'kcidb-query - Query reports from Kernel CI report database'
-    parser = argparse.ArgumentParser(description=description)
-    parser.add_argument(
-        '-d', '--dataset',
-        help='Dataset name',
-        required=True
-    )
-    args = parser.parse_args()
-    client = Client(args.dataset)
-    json.dump(client.query(), sys.stdout, indent=4, sort_keys=True)
+class Client:
+    """Kernel CI reporting client"""
+
+    def __init__(self, dataset_name):
+        """
+        Initialize a reporting client
+
+        Args:
+            dataset_name:   The name of the Kernel CI dataset. The dataset
+                            should be located within the Google Cloud project
+                            specified in the credentials file pointed to by
+                            GOOGLE_APPLICATION_CREDENTIALS environment
+                            variable.
+        """
+        self.db_client = DBClient(dataset_name)
+
+    def submit(self, data):
+        """
+        Submit reports.
+
+        Args:
+            data:   The JSON report data to submit.
+                    Must adhere to the I/O schema (kcidb.io_schema.JSON).
+        """
+        self.db_client.load(data)
+
+    def query(self):
+        """
+        Query reports.
+
+        Returns:
+            The JSON report data adhering to the I/O schema
+            (kcidb.io_schema.JSON).
+        """
+        self.db_client.query()
 
 
 def submit_main():
     """Execute the kcidb-submit command-line tool"""
     description = \
-        'kcidb-submit - Submit reports to Kernel CI report database'
+        'kcidb-submit - Submit Kernel CI reports'
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument(
         '-d', '--dataset',
@@ -181,13 +203,14 @@ def submit_main():
     args = parser.parse_args()
     data = json.load(sys.stdin)
     io_schema.validate(data)
-    client = Client(args.dataset)
-    client.submit(data)
+    client = DBClient(args.dataset)
+    client.load(data)
 
 
-def init_main():
-    """Execute the kcidb-init command-line tool"""
-    description = 'kcidb-init - Initialize a Kernel CI report database'
+def query_main():
+    """Execute the kcidb-query command-line tool"""
+    description = \
+        'kcidb-query - Query Kernel CI reports'
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument(
         '-d', '--dataset',
@@ -195,13 +218,59 @@ def init_main():
         required=True
     )
     args = parser.parse_args()
-    client = Client(args.dataset)
+    client = DBClient(args.dataset)
+    json.dump(client.query(), sys.stdout, indent=4, sort_keys=True)
+
+
+def db_query_main():
+    """Execute the kcidb-db-query command-line tool"""
+    description = \
+        'kcidb-db-query - Query reports from Kernel CI report database'
+    parser = argparse.ArgumentParser(description=description)
+    parser.add_argument(
+        '-d', '--dataset',
+        help='Dataset name',
+        required=True
+    )
+    args = parser.parse_args()
+    client = DBClient(args.dataset)
+    json.dump(client.query(), sys.stdout, indent=4, sort_keys=True)
+
+
+def db_load_main():
+    """Execute the kcidb-db-load command-line tool"""
+    description = \
+        'kcidb-db-load - Load reports into Kernel CI report database'
+    parser = argparse.ArgumentParser(description=description)
+    parser.add_argument(
+        '-d', '--dataset',
+        help='Dataset name',
+        required=True
+    )
+    args = parser.parse_args()
+    data = json.load(sys.stdin)
+    io_schema.validate(data)
+    client = DBClient(args.dataset)
+    client.load(data)
+
+
+def db_init_main():
+    """Execute the kcidb-db-init command-line tool"""
+    description = 'kcidb-db-init - Initialize a Kernel CI report database'
+    parser = argparse.ArgumentParser(description=description)
+    parser.add_argument(
+        '-d', '--dataset',
+        help='Dataset name',
+        required=True
+    )
+    args = parser.parse_args()
+    client = DBClient(args.dataset)
     client.init()
 
 
-def cleanup_main():
-    """Execute the kcidb-cleanup command-line tool"""
-    description = 'kcidb-cleanup - Cleanup a Kernel CI report database'
+def db_cleanup_main():
+    """Execute the kcidb-db-cleanup command-line tool"""
+    description = 'kcidb-db-cleanup - Cleanup a Kernel CI report database'
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument(
         '-d', '--dataset',
@@ -209,7 +278,7 @@ def cleanup_main():
         required=True
     )
     args = parser.parse_args()
-    client = Client(args.dataset)
+    client = DBClient(args.dataset)
     client.cleanup()
 
 
