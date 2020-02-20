@@ -9,7 +9,9 @@ import yaml
 import requests
 import jsonschema
 from google.cloud import bigquery
+from google.cloud import pubsub
 from google.api_core.exceptions import BadRequest
+from google.api_core.exceptions import DeadlineExceeded
 from kcidb import db_schema
 from kcidb import io_schema
 from kcidb import tests_schema
@@ -190,6 +192,146 @@ class Client:
         self.db_client.query()
 
 
+class MQPublisher:
+    """Kernel CI message queue publisher"""
+    # pylint: disable=no-member
+
+    @staticmethod
+    def encode_data(io_data):
+        """
+        Encode JSON data adhering to the I/O schema (kcidb.io_schema.JSON)
+        into message data.
+
+        Args:
+            io_data:    JSON data adhering to the I/O schema
+                        (kcidb.io_schema.JSON) to be encoded.
+
+        Returns
+            The encoded message data.
+        """
+        io_schema.validate(io_data)
+        return json.dumps(io_data).encode("utf-8")
+
+    def __init__(self, project_id, topic_name):
+        """
+        Initialize a Kernel CI message queue publisher.
+
+        Args:
+            project_id:         ID of the Google Cloud project to which the
+                                message queue belongs.
+            topic_name:         Name of the message queue topic to publish to.
+        """
+        self.client = pubsub.PublisherClient()
+        self.topic_path = self.client.topic_path(project_id, topic_name)
+
+    def init(self):
+        """
+        Initialize publishing setup.
+        """
+        self.client.create_topic(self.topic_path)
+
+    def cleanup(self):
+        """
+        Cleanup publishing setup.
+        """
+        self.client.delete_topic(self.topic_path)
+
+    def publish(self, data):
+        """
+        Publish data to the message queue.
+
+        Args:
+            data:   The JSON data to publish to the message queue.
+                    Must adhere to the I/O schema (kcidb.io_schema.JSON).
+        """
+        io_schema.validate(data)
+        self.client.publish(self.topic_path, MQPublisher.encode_data(data))
+
+
+class MQSubscriber:
+    """Kernel CI message queue subscriber"""
+    # pylint: disable=no-member
+
+    @staticmethod
+    def decode_data(message_data):
+        """
+        Decode message data to extract the JSON data adhering to the I/O
+        schema (kcidb.io_schema.JSON).
+
+        Args:
+            message_data:   The message data from the message queue
+                            ("data" field of pubsub.types.PubsubMessage) to be
+                            decoded.
+
+        Returns
+            The decoded JSON data adhering to the I/O schema
+            (kcidb.io_schema.JSON).
+        """
+        return io_schema.validate(json.loads(message_data.decode("utf-8")))
+
+    def __init__(self, project_id, topic_name, subscription_name):
+        """
+        Initialize a Kernel CI message queue subscriber.
+
+        Args:
+            project_id:         ID of the Google Cloud project to which the
+                                message queue belongs.
+            topic_name:         Name of the message queue topic to subscribe
+                                to.
+            subscription_name:  Name of the subscription to use.
+        """
+        self.client = pubsub.SubscriberClient()
+        self.subscription_path = \
+            self.client.subscription_path(project_id, subscription_name)
+        self.topic_path = self.client.topic_path(project_id, topic_name)
+
+    def init(self):
+        """
+        Initialize subscription setup.
+        """
+        self.client.create_subscription(self.subscription_path,
+                                        self.topic_path)
+
+    def cleanup(self):
+        """
+        Cleanup subscription setup.
+        """
+        self.client.delete_subscription(self.subscription_path)
+
+    def pull(self):
+        """
+        Pull published data from the message queue.
+
+        Returns:
+            Two values:
+            * The ID to use when acknowledging the reception of the data.
+            * The JSON data from the message queue, adhering to the I/O schema
+              (kcidb.io_schema.JSON).
+        """
+        while True:
+            try:
+                # Setting *some* timeout, because infinite timeout doesn't
+                # seem to be supported
+                response = self.client.pull(self.subscription_path, 1,
+                                            timeout=300)
+                if response.received_messages:
+                    break
+            except DeadlineExceeded:
+                pass
+        message = response.received_messages[0]
+        data = MQSubscriber.decode_data(message.message.data)
+        return message.ack_id, io_schema.validate(data)
+
+    def ack(self, ack_id):
+        """
+        Acknowledge reception of data.
+
+        Args:
+            ack_id: The ID received with the data to be acknowledged.
+        """
+        self.client.acknowledge(self.subscription_path, [ack_id])
+
+
 def submit_main():
     """Execute the kcidb-submit command-line tool"""
     description = \
@@ -280,6 +422,146 @@ def db_cleanup_main():
     args = parser.parse_args()
     client = DBClient(args.dataset)
     client.cleanup()
+
+
+def publisher_init_main():
+    """Execute the kcidb-publisher-init command-line tool"""
+    description = \
+        'kcidb-publisher-init - Initialize a Kernel CI report publisher'
+    parser = argparse.ArgumentParser(description=description)
+    parser.add_argument(
+        '-p', '--project',
+        help='ID of the Google Cloud project with the message queue',
+        required=True
+    )
+    parser.add_argument(
+        '-t', '--topic',
+        help='Name of the message queue topic to create',
+        required=True
+    )
+    args = parser.parse_args()
+    publisher = MQPublisher(args.project, args.topic)
+    publisher.init()
+
+
+def publisher_cleanup_main():
+    """Execute the kcidb-publisher-cleanup command-line tool"""
+    description = \
+        'kcidb-publisher-cleanup - Cleanup a Kernel CI report publisher'
+    parser = argparse.ArgumentParser(description=description)
+    parser.add_argument(
+        '-p', '--project',
+        help='ID of the Google Cloud project with the message queue',
+        required=True
+    )
+    parser.add_argument(
+        '-t', '--topic',
+        help='Name of the message queue topic to remove',
+        required=True
+    )
+    args = parser.parse_args()
+    publisher = MQPublisher(args.project, args.topic)
+    publisher.cleanup()
+
+
+def publisher_publish_main():
+    """Execute the kcidb-publisher-publish command-line tool"""
+    description = \
+        'kcidb-publisher-publish - Publish with a Kernel CI report publisher'
+    parser = argparse.ArgumentParser(description=description)
+    parser.add_argument(
+        '-p', '--project',
+        help='ID of the Google Cloud project with the message queue',
+        required=True
+    )
+    parser.add_argument(
+        '-t', '--topic',
+        help='Name of the message queue topic to publish to',
+        required=True
+    )
+    args = parser.parse_args()
+    data = json.load(sys.stdin)
+    io_schema.validate(data)
+    publisher = MQPublisher(args.project, args.topic)
+    publisher.publish(data)
+
+
+def subscriber_init_main():
+    """Execute the kcidb-subscriber-init command-line tool"""
+    description = \
+        'kcidb-subscriber-init - Initialize a Kernel CI report subscriber'
+    parser = argparse.ArgumentParser(description=description)
+    parser.add_argument(
+        '-p', '--project',
+        help='ID of the Google Cloud project with the message queue',
+        required=True
+    )
+    parser.add_argument(
+        '-t', '--topic',
+        help='Name of the subscription\'s message queue topic',
+        required=True
+    )
+    parser.add_argument(
+        '-s', '--subscription',
+        help='Name of the subscription to create',
+        required=True
+    )
+    args = parser.parse_args()
+    subscriber = MQSubscriber(args.project, args.topic, args.subscription)
+    subscriber.init()
+
+
+def subscriber_cleanup_main():
+    """Execute the kcidb-subscriber-cleanup command-line tool"""
+    description = \
+        'kcidb-subscriber-cleanup - Cleanup a Kernel CI report subscriber'
+    parser = argparse.ArgumentParser(description=description)
+    parser.add_argument(
+        '-p', '--project',
+        help='ID of the Google Cloud project with the message queue',
+        required=True
+    )
+    parser.add_argument(
+        '-t', '--topic',
+        help='Name of the subscription\'s message queue topic',
+        required=True
+    )
+    parser.add_argument(
+        '-s', '--subscription',
+        help='Name of the subscription to remove',
+        required=True
+    )
+    args = parser.parse_args()
+    subscriber = MQSubscriber(args.project, args.topic, args.subscription)
+    subscriber.cleanup()
+
+
+def subscriber_pull_main():
+    """Execute the kcidb-subscriber-pull command-line tool"""
+    description = \
+        'kcidb-subscriber-pull - Pull with a Kernel CI report subscriber'
+    parser = argparse.ArgumentParser(description=description)
+    parser.add_argument(
+        '-p', '--project',
+        help='ID of the Google Cloud project with the message queue',
+        required=True
+    )
+    parser.add_argument(
+        '-t', '--topic',
+        help='Name of the subscription\'s message queue topic',
+        required=True
+    )
+    parser.add_argument(
+        '-s', '--subscription',
+        help='Name of the subscription to pull from',
+        required=True
+    )
+    args = parser.parse_args()
+    subscriber = MQSubscriber(args.project, args.topic, args.subscription)
+    ack_id, data = subscriber.pull()
+    json.dump(data, sys.stdout, indent=4, sort_keys=True)
+    sys.stdout.flush()
+    subscriber.ack(ack_id)
 
 
 def schema_main():

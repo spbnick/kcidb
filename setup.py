@@ -39,6 +39,7 @@ setuptools.setup(
     ],
     install_requires=[
         "google-cloud-bigquery",
+        "google-cloud-pubsub",
         "jsonschema",
         "requests",
         "pyyaml",
@@ -60,6 +61,12 @@ setuptools.setup(
             "kcidb-db-cleanup = kcidb:db_cleanup_main",
             "kcidb-db-load = kcidb:db_load_main",
             "kcidb-db-query = kcidb:db_query_main",
+            "kcidb-publisher-init = kcidb:publisher_init_main",
+            "kcidb-publisher-cleanup = kcidb:publisher_cleanup_main",
+            "kcidb-publisher-publish = kcidb:publisher_publish_main",
+            "kcidb-subscriber-init = kcidb:subscriber_init_main",
+            "kcidb-subscriber-cleanup = kcidb:subscriber_cleanup_main",
+            "kcidb-subscriber-pull = kcidb:subscriber_pull_main",
             "kcidb-tests-validate = kcidb:tests_validate_main",
         ]
     )
