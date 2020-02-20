@@ -20,7 +20,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="kcidb",
-    version="1",
+    version="3",
     python_requires=">=3.6",
     author="kernelci.org",
     author_email="kernelci@groups.io",
