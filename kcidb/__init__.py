@@ -52,6 +52,35 @@ class DBClient:
             table_ref = self.dataset_ref.table(table_name)
             self.client.delete_table(table_ref)
 
+    @staticmethod
+    def _unpack_node(node):
+        """
+        Unpack a retrieved data node (and all its children) to
+        the JSON-compatible and schema-complying representation.
+
+        Args:
+            node:   The node to unpack.
+
+        Returns:
+            The unpacked node.
+        """
+        if isinstance(node, decimal.Decimal):
+            node = float(node)
+        elif isinstance(node, datetime):
+            node = node.isoformat()
+        elif isinstance(node, list):
+            for index, value in enumerate(node):
+                node[index] = DBClient._unpack_node(value)
+        elif isinstance(node, dict):
+            for key, value in list(node.items()):
+                if value is None:
+                    del node[key]
+                elif key == "misc":
+                    node[key] = json.loads(value)
+                else:
+                    node[key] = DBClient._unpack_node(value)
+        return node
+
     def query(self):
         """
         Query data from the database.
@@ -60,33 +89,6 @@ class DBClient:
             The JSON data from the database adhering to the I/O schema
             (kcidb.io_schema.JSON).
         """
-        def convert_node(node):
-            """
-            Convert a retrieved data node (and all its children) to
-            the JSON-compatible and schema-complying representation.
-
-            Args:
-                node:   The node to convert.
-
-            Returns:
-                The converted node.
-            """
-            if isinstance(node, decimal.Decimal):
-                node = float(node)
-            elif isinstance(node, datetime):
-                node = node.isoformat()
-            elif isinstance(node, list):
-                for index, value in enumerate(node):
-                    node[index] = convert_node(value)
-            elif isinstance(node, dict):
-                for key, value in list(node.items()):
-                    if value is None:
-                        del node[key]
-                    elif key == "misc":
-                        node[key] = json.loads(value)
-                    else:
-                        node[key] = convert_node(value)
-            return node
 
         data = dict(version=dict(major=io_schema.JSON_VERSION_MAJOR,
                                  minor=io_schema.JSON_VERSION_MINOR))
@@ -96,12 +98,38 @@ class DBClient:
             query_job = self.client.query(
                 f"SELECT * FROM `{obj_list_name}`", job_config=job_config)
             data[obj_list_name] = [
-                convert_node(dict(row.items())) for row in query_job
+                DBClient._unpack_node(dict(row.items())) for row in query_job
             ]
 
         io_schema.validate(data)
 
         return data
+
+    @staticmethod
+    def _pack_node(node):
+        """
+        Pack a loaded data node (and all its children) to
+        the BigQuery storage-compatible representation.
+
+        Args:
+            node:   The node to pack.
+
+        Returns:
+            The packed node.
+        """
+        if isinstance(node, list):
+            node = node.copy()
+            for index, value in enumerate(node):
+                node[index] = DBClient._pack_node(value)
+        elif isinstance(node, dict):
+            node = node.copy()
+            for key, value in list(node.items()):
+                # Flatten the "misc" fields
+                if key == "misc":
+                    node[key] = json.dumps(value)
+                else:
+                    node[key] = DBClient._pack_node(value)
+        return node
 
     def load(self, data):
         """
@@ -111,35 +139,10 @@ class DBClient:
             data:   The JSON data to load into the database.
                     Must adhere to the I/O schema (kcidb.io_schema.JSON).
         """
-        def convert_node(node):
-            """
-            Convert a submitted data node (and all its children) to
-            the BigQuery storage-compatible representation.
-
-            Args:
-                node:   The node to convert.
-
-            Returns:
-                The converted node.
-            """
-            if isinstance(node, list):
-                node = node.copy()
-                for index, value in enumerate(node):
-                    node[index] = convert_node(value)
-            elif isinstance(node, dict):
-                node = node.copy()
-                for key, value in list(node.items()):
-                    # Flatten the "misc" fields
-                    if key == "misc":
-                        node[key] = json.dumps(value)
-                    else:
-                        node[key] = convert_node(value)
-            return node
-
         io_schema.validate(data)
         for obj_list_name in db_schema.TABLE_MAP:
             if obj_list_name in data:
-                obj_list = convert_node(data[obj_list_name])
+                obj_list = DBClient._pack_node(data[obj_list_name])
                 job_config = bigquery.job.LoadJobConfig(
                     autodetect=False,
                     schema=db_schema.TABLE_MAP[obj_list_name])
