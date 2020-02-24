@@ -157,6 +157,183 @@ class DBClient:
                         f"ERROR: {error['message']}\n" for error in job.errors
                     ]))
 
+    @staticmethod
+    def _get_ids_query(data, obj_list_name):
+        """
+        Generate a query string and parameters retrieving IDs of specific
+        objects referenced by the supplied data, both directly and as parents.
+
+        Args:
+            data:           The data to get objects from.
+            obj_list_name:  Plural name of the object type (table name) to
+                            query IDs for.
+
+        Returns:
+            The query string and a list of (positional) parameters for it, or
+            an empty string and an empty list if there were no object IDs
+            referenced in the data.
+            If the query string is returned, the query would produce two
+            columns: "origin" and "origin_id".
+        """
+        io_schema.validate(data)
+        assert isinstance(obj_list_name, str)
+        assert obj_list_name.endswith("s")
+        obj_name = obj_list_name[:-1]
+
+        query_string = ""
+        query_params = []
+
+        for child_list_name in db_schema.TABLE_CHILDREN_MAP[obj_list_name]:
+            child_query_string, child_query_params = \
+                DBClient._get_ids_query(data, child_list_name)
+            assert bool(child_query_string) == bool(child_query_params)
+            if child_query_string:
+                if query_string:
+                    query_string += "UNION DISTINCT\n"
+                query_string += \
+                    f"SELECT " \
+                    f"table.{obj_name}_origin as origin, " \
+                    f"table.{obj_name}_origin_id as origin_id " \
+                    f"FROM {child_list_name} as table " \
+                    f"INNER JOIN ({child_query_string}) as ids " \
+                    f"ON table.origin = ids.origin AND " \
+                    f"   table.origin_id = ids.origin_id\n"
+                query_params += child_query_params
+        # Workaround client library choking on empty array parameters
+        if data.get(obj_list_name, []):
+            if query_string:
+                query_string += "UNION DISTINCT\n"
+            query_string += \
+                "SELECT * FROM UNNEST(?)\n"
+            query_params += [
+                bigquery.ArrayQueryParameter(
+                    None,
+                    "STRUCT",
+                    [
+                        bigquery.StructQueryParameter(
+                            None,
+                            bigquery.ScalarQueryParameter(
+                                "origin", "STRING", obj["origin"]),
+                            bigquery.ScalarQueryParameter(
+                                "origin_id", "STRING", obj["origin_id"])
+                        )
+                        for obj in data.get(obj_list_name, [])
+                    ]
+                )
+            ]
+        assert bool(query_string) == bool(query_params)
+        return query_string, query_params
+
+    def _query_tree(self, data, obj_list_name, join_string, join_params):
+        """
+        Retrieve objects of particular type selected by the specified JOIN
+        clause string and parameters, as well as their children.
+
+        Args:
+            data:           The I/O-schema data to put retrieved objects
+                            into.
+            obj_list_name:  Plural name of the type of object (table name)
+                            to retrieve
+            join_string:    The JOIN clause string to limit the query with.
+            join_params:    The parameters for the JOIN clause.
+        """
+        io_schema.validate(data)
+
+        assert isinstance(obj_list_name, str)
+        assert obj_list_name.endswith("s")
+        assert isinstance(join_string, str)
+        assert isinstance(join_params, list)
+
+        obj_name = obj_list_name[:-1]
+
+        query_string = \
+            f"SELECT {obj_list_name}.* FROM {obj_list_name}\n{join_string}"
+        job_config = bigquery.job.QueryJobConfig(
+            query_parameters=join_params,
+            default_dataset=self.dataset_ref
+        )
+        query_job = self.client.query(query_string, job_config=job_config)
+        data[obj_list_name] = [
+            DBClient._unpack_node(dict(row.items())) for row in query_job
+        ]
+
+        for child_list_name in db_schema.TABLE_CHILDREN_MAP[obj_list_name]:
+            child_join_string = \
+               f"INNER JOIN {obj_list_name} " \
+               f"ON {child_list_name}.{obj_name}_origin = " \
+               f"   {obj_list_name}.origin AND " \
+               f"   {child_list_name}.{obj_name}_origin_id = " \
+               f"   {obj_list_name}.origin_id\n" \
+               f"{join_string}"
+            self._query_tree(data, child_list_name,
+                             child_join_string, join_params)
+
+        io_schema.validate(data)
+
+    def complement(self, data):
+        """
+        Given I/O data, return its complement. I.e. the same data, but with
+        all objects from the database it references. E.g. for each revision
+        load all its builds, for each build load all its tests. And vice
+        versa: for each test load its build, and for each build load its
+        revision.
+
+        Args:
+            data:   The JSON data to complement from the database.
+                    Must adhere to the I/O schema (kcir.io_schema.JSON).
+                    Will not be modified.
+
+        Returns:
+            The complemented JSON data from the database adhering to the I/O
+            schema (kcir.io_schema.JSON).
+        """
+        io_schema.validate(data)
+
+        complement = dict(version=dict(major=io_schema.JSON_VERSION_MAJOR,
+                                       minor=io_schema.JSON_VERSION_MINOR))
+        # For each top-level table
+        for obj_list_name in db_schema.TABLE_CHILDREN_MAP[""]:
+            # Get complement IDs
+            query_string, query_params = \
+                DBClient._get_ids_query(data, obj_list_name)
+            assert bool(query_string) == bool(query_params)
+            if not query_string:
+                continue
+            job_config = bigquery.job.QueryJobConfig(
+                query_parameters=query_params,
+                default_dataset=self.dataset_ref
+            )
+            query_job = self.client.query(query_string, job_config=job_config)
+            result = query_job.result()
+
+            # Workaround client library choking on empty array parameters
+            if result.total_rows:
+                # Get object tree starting with complement IDs
+                join_string = \
+                    f"INNER JOIN UNNEST(?) as ids " \
+                    f"ON {obj_list_name}.origin = ids.origin AND " \
+                    f"   {obj_list_name}.origin_id = ids.origin_id\n"
+                join_params = [
+                    bigquery.ArrayQueryParameter(
+                        None,
+                        "STRUCT",
+                        [
+                            bigquery.StructQueryParameter(
+                                None,
+                                bigquery.ScalarQueryParameter(
+                                    "origin", "STRING", row.origin),
+                                bigquery.ScalarQueryParameter(
+                                    "origin_id", "STRING", row.origin_id)
+                            )
+                            for row in result
+                        ]
+                    )
+                ]
+                self._query_tree(complement, obj_list_name,
+                                 join_string, join_params)
+
+        return complement
+
 
 class Client:
     """Kernel CI reporting client"""
@@ -365,6 +542,23 @@ def query_main():
     args = parser.parse_args()
     client = DBClient(args.dataset)
     json.dump(client.query(), sys.stdout, indent=4, sort_keys=True)
+
+
+def db_complement_main():
+    """Execute the kcidb-db-complement command-line tool"""
+    description = \
+        'kcidb-db-complement - Complement reports from database'
+    parser = argparse.ArgumentParser(description=description)
+    parser.add_argument(
+        '-d', '--dataset',
+        help='Dataset name',
+        required=True
+    )
+    args = parser.parse_args()
+    data = json.load(sys.stdin)
+    io_schema.validate(data)
+    client = DBClient(args.dataset)
+    json.dump(client.complement(data), sys.stdout, indent=4, sort_keys=True)
 
 
 def db_query_main():

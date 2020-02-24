@@ -20,6 +20,15 @@ ENVIRONMENT_FIELDS = (
     ),
 )
 
+# A map of table names to "child" table names
+# Empty "table" has top tables as children.
+TABLE_CHILDREN_MAP = {
+    "": ["revisions"],
+    "revisions": ["builds"],
+    "builds": ["tests"],
+    "tests": []
+}
+
 # A map of table names to their BigQuery schemas
 TABLE_MAP = dict(
     revisions=[
