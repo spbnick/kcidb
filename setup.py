@@ -24,7 +24,7 @@ setuptools.setup(
     python_requires=">=3.6",
     author="kernelci.org",
     author_email="kernelci@groups.io",
-    description="KCIDB = kernelci.org database tools",
+    description="KCIDB = Linux Kernel CI reporting tools",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/spbnick/kcidb",

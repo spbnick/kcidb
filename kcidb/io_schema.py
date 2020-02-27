@@ -432,8 +432,8 @@ JSON_TEST = {
 JSON = {
     "title": "kcidb",
     "description":
-        "Kernelci.org test data. To be submitted to/queried from the common "
-        "test report database.\n"
+        "Kernel CI report data. To be submitted to/queried from the common "
+        "report database.\n"
         "\n"
         "Objects in the data are identified and linked together using two "
         "properties: \"origin\" and \"origin_id\". The former is a string "

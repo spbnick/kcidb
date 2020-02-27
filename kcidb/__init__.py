@@ -1,4 +1,4 @@
-"""Kernel CI database management"""
+"""Kernel CI reporting"""
 
 import argparse
 import decimal
@@ -16,11 +16,11 @@ from kcidb import tests_schema
 
 
 class Client:
-    """Kernel CI database client"""
+    """Kernel CI report database client"""
 
     def __init__(self, dataset_name):
         """
-        Initialize a Kernel CI database client.
+        Initialize a Kernel CI report database client.
 
         Args:
             dataset_name:   The name of the Kernel CI dataset. The dataset
@@ -155,7 +155,8 @@ class Client:
 
 def query_main():
     """Execute the kcidb-query command-line tool"""
-    description = 'kcidb-query - Query test results from kernelci.org database'
+    description = \
+        'kcidb-query - Query reports from Kernel CI report database'
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument(
         '-d', '--dataset',
@@ -169,7 +170,8 @@ def query_main():
 
 def submit_main():
     """Execute the kcidb-submit command-line tool"""
-    description = 'kcidb-submit - Submit test results to kernelci.org database'
+    description = \
+        'kcidb-submit - Submit reports to Kernel CI report database'
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument(
         '-d', '--dataset',
@@ -185,7 +187,7 @@ def submit_main():
 
 def init_main():
     """Execute the kcidb-init command-line tool"""
-    description = 'kcidb-init - Initialize a kernelci.org database'
+    description = 'kcidb-init - Initialize a Kernel CI report database'
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument(
         '-d', '--dataset',
@@ -199,7 +201,7 @@ def init_main():
 
 def cleanup_main():
     """Execute the kcidb-cleanup command-line tool"""
-    description = 'kcidb-cleanup - Cleanup a kernelci.org database'
+    description = 'kcidb-cleanup - Cleanup a Kernel CI report database'
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument(
         '-d', '--dataset',

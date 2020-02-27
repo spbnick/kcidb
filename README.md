@@ -1,8 +1,8 @@
 KCIDB
 =====
 
-Kcidb is a package for entering and querying data to/from kernelci.org test
-execution database.
+Kcidb is a package for entering and querying data to/from the Linux Kernel CI
+common report database.
 
 Setup
 -----
