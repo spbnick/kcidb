@@ -5,8 +5,8 @@ python:
 install:
     - pip3 install '.[dev]'
 script:
-    - flake8 kcidb
-    - pylint kcidb
+    - "flake8 kcidb *.py"
+    - "pylint kcidb *.py"
     - find -name '*.yaml' | xargs yamllint
     - kcidb-tests-validate --urls < tests.yaml
     - |
