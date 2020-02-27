@@ -16,7 +16,7 @@
 import setuptools
 
 with open("README.md", "r") as fh:
-    long_description = fh.read()
+    LONG_DESCRIPTION = fh.read()
 
 setuptools.setup(
     name="kcidb",
@@ -25,7 +25,7 @@ setuptools.setup(
     author="kernelci.org",
     author_email="kernelci@groups.io",
     description="KCIDB = Linux Kernel CI reporting tools",
-    long_description=long_description,
+    long_description=LONG_DESCRIPTION,
     long_description_content_type="text/markdown",
     url="https://github.com/spbnick/kcidb",
     packages=setuptools.find_packages(),
