@@ -1,0 +1,2 @@
+# Pip requirements for Google Cloud Functions
+-e .
