@@ -131,3 +131,13 @@ To upgrade the dataset schema, do the following.
         kcidb-db-query -d kernelci01 > kernelci01.json
         # Using new-schema kcidb
         kcidb-db-load -d kernelci02 < kernelci01.json
+
+Developer guide
+---------------
+
+### Releasing
+
+To make a release tag the release commit with `v<NUMBER>`, where `<NUMBER>` is
+the next release number, e.g. `v3`. The very next commit after the tag should
+update the version number in `setup.py` to be the next one. I.e. continuing
+the above example, it should be `4`.
