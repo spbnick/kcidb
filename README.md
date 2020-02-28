@@ -13,7 +13,7 @@ To install the package for the current user, run this command:
 
 Where `<SOURCE>` is the location of the package source, e.g. a git repo:
 
-    pip3 install --user git+https://github.com/spbnick/kcidb.git
+    pip3 install --user git+https://github.com/kernelci/kcidb.git
 
 or a directory path:
 
