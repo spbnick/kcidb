@@ -5,16 +5,19 @@ import json
 import sys
 import logging
 import textwrap
+from functools import reduce
 from datetime import datetime
 from google.cloud import bigquery
 from google.api_core.exceptions import BadRequest
 from google.api_core.exceptions import NotFound
 import kcidb_io as io
+import kcidb.oo.data as oo_data
 from kcidb.db import schema
 from kcidb import misc
 from kcidb.misc import LIGHT_ASSERTS
 from kcidb.bigquery import validate_json_obj_list
 
+# We'll get to it, pylint: disable=too-many-lines
 
 # Module's logger
 LOGGER = logging.getLogger(__name__)
@@ -37,7 +40,7 @@ class IncompatibleSchema(Exception):
                          f"{io.schema.LATEST.minor}")
 
 
-class Client:
+class Client(oo_data.Source):
     """Kernel CI report database client"""
 
     def __init__(self, dataset_name, project_id=None):
@@ -380,6 +383,141 @@ class Client:
             return io.new()
 
     @staticmethod
+    def _oo_request_render(request):
+        """
+        Render a request for raw OO data into a query.
+
+        Args:
+            request:    The request (instance of kcidb.oo.data.Request) to
+                        render.
+
+        Returns:
+            The SQL query string and the query parameters.
+        """
+        assert isinstance(request, oo_data.Request)
+        obj_type = request.obj_type
+        type_query_string = schema.OO_QUERIES[obj_type.name]
+        if request.obj_id_list:
+            obj_id_fields = obj_type.id_fields
+            query_string = "SELECT obj.* FROM (\n" + \
+                textwrap.indent(type_query_string, " " * 4) + "\n" + \
+                ") AS obj INNER JOIN (\n" + \
+                "    SELECT * FROM UNNEST(?)\n" + \
+                ") AS ids USING(" + ", ".join(obj_id_fields) + ")"
+            query_parameters = [
+                bigquery.ArrayQueryParameter(
+                    None,
+                    "STRUCT",
+                    [
+                        bigquery.StructQueryParameter(
+                            None,
+                            *(
+                                bigquery.ScalarQueryParameter(c, "STRING", v)
+                                for c, v in zip(obj_id_fields, obj_id)
+                            )
+                        )
+                        for obj_id in request.obj_id_list
+                    ]
+                )
+            ]
+        else:
+            query_string = type_query_string
+            if request.obj_id_list is not None:
+                # Workaround empty array parameters not having element type
+                query_string += " LIMIT 0"
+            query_parameters = []
+
+        if request.base:
+            base_query_string, base_query_parameters = \
+                Client._oo_request_render(request.base)
+            base_obj_type = request.base.obj_type
+            if request.child:
+                column_pairs = zip(
+                    base_obj_type.children[obj_type.name].ref_fields,
+                    base_obj_type.id_fields
+                )
+            else:
+                column_pairs = zip(
+                    obj_type.id_fields,
+                    obj_type.children[base_obj_type.name].ref_fields
+                )
+
+            query_string = "SELECT obj.* FROM (\n" + \
+                textwrap.indent(query_string, " " * 4) + "\n" + \
+                ") AS obj INNER JOIN (\n" + \
+                textwrap.indent(base_query_string, " " * 4) + "\n" + \
+                ") AS base ON " + \
+                " AND ".join(
+                    [f"obj.{o} = base.{b}" for o, b in column_pairs]
+                )
+            query_parameters += base_query_parameters
+
+        return query_string, query_parameters
+
+    def oo_query(self, request_list):
+        """
+        Query raw object-oriented data from the database.
+
+        Args:
+            request_list:   A list of object branch requests
+                            ("kcidb.oo.data.Request" instances) to fulfill.
+        Returns:
+            A dictionary of object type names and lists containing retrieved
+            objects of the corresponding type.
+        """
+        assert isinstance(request_list, list)
+        assert all(isinstance(r, oo_data.Request) for r in request_list)
+
+        major, minor = self.get_schema_version()
+        if major != io.schema.LATEST.major:
+            raise IncompatibleSchema(major, minor)
+
+        # Render all queries for each type
+        obj_type_queries = {}
+        for obj_type_name in oo_data.SCHEMA.types:
+            for request in request_list:
+                # TODO: Avoid adding the same requests multiple times
+                while request:
+                    if request.load and \
+                       request.obj_type.name == obj_type_name:
+                        if request.obj_type not in obj_type_queries:
+                            obj_type_queries[request.obj_type] = []
+                        obj_type_queries[request.obj_type]. \
+                            append(Client._oo_request_render(request))
+                    request = request.base
+
+        # Execute all the queries
+        objs = {}
+        for obj_type, queries in obj_type_queries.items():
+            # Workaround lack of equality operation for array columns
+            # required for "UNION DISTINCT"
+            query_string = "SELECT obj.* FROM (\n" + \
+                textwrap.indent(schema.OO_QUERIES[obj_type.name],
+                                " " * 4) + "\n" + \
+                ") AS obj INNER JOIN (\n" + \
+                "    SELECT DISTINCT " + \
+                ", ".join(obj_type.id_fields) + \
+                " FROM (\n" + \
+                textwrap.indent("\nUNION ALL\n".join(q[0] for q in queries),
+                                " " * 8) + "\n" + \
+                "    )\n" + \
+                ") AS ids USING(" + ", ".join(obj_type.id_fields) + ")"
+            query_parameters = reduce(lambda x, y: x + y,
+                                      (q[1] for q in queries))
+            job_config = bigquery.job.QueryJobConfig(
+                query_parameters=query_parameters,
+                default_dataset=self.dataset_ref
+            )
+            job = self.client.query(query_string, job_config=job_config)
+            objs[obj_type.name] = [
+                Client._unpack_node(dict(row.items()), drop_null=False)
+                for row in job.result()
+            ]
+
+        assert LIGHT_ASSERTS or oo_data.SCHEMA.is_valid(objs)
+        return objs
+
+    @staticmethod
     def _pack_node(node):
         """
         Pack a loaded data node (and all its children) to
@@ -651,6 +789,42 @@ def query_main():
     )
     misc.json_dump_stream(
         query_iter, sys.stdout, indent=args.indent, seq=args.seq
+    )
+
+
+def oo_query_help_main():
+    """Execute the kcidb-db-oo-query-help command-line tool"""
+    sys.excepthook = misc.log_and_print_excepthook
+    description = \
+        "kcidb-db-oo-query-help - Output documentation on OO data " \
+        "request format"
+    parser = misc.ArgumentParser(description=description)
+    parser.parse_args()
+    print(
+        oo_data.Request.STRING_DOC +
+        "\n" +
+        "NOTE: Specifying object ID lists separately is not supported using\n"
+        "      command-line tools. Only inline ID lists are supported.\n"
+    )
+
+
+def oo_query_main():
+    """Execute the kcidb-db-oo-query command-line tool"""
+    sys.excepthook = misc.log_and_print_excepthook
+    description = \
+        "kcidb-db-oo-query - Query object-oriented data from " \
+        "Kernel CI report database"
+    parser = OutputArgumentParser(description=description)
+    parser.add_argument(
+        'request_string',
+        metavar='REQUEST',
+        help='Object request. See documentation with kcidb-db-oo-query-help.'
+    )
+    args = parser.parse_args()
+    client = Client(args.dataset, project_id=args.project)
+    misc.json_dump(
+        client.oo_query(oo_data.Request.parse(args.request_string)),
+        sys.stdout, indent=args.indent, seq=args.seq
     )
 
 

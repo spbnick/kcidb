@@ -41,6 +41,7 @@ from kcidb.oo.checkout import Node as Checkout
 from kcidb.oo.build import Node as Build
 from kcidb.oo.test import Node as Test
 from kcidb.oo.test import NodeEnvironment as TestEnvironment
+from kcidb.oo.data import Type, SCHEMA, Request, Source
 
 __all__ = [
     "Node", "Checkout", "Build", "Test", "TestEnvironment",
@@ -328,3 +329,105 @@ def apply_mask(base, mask):
 
     assert LIGHT_ASSERTS or is_valid(output)
     return output
+
+
+class Object:
+    """An object-oriented representation of a database object"""
+
+    # Calm down, pylint: disable=redefined-builtin,invalid-name
+
+    def __init__(self, client, type, data):
+        """
+        Initialize the representation.
+
+        Args:
+            client:     The object-oriented database client to query for
+                        references.
+            type:       The type of represented object.
+                        Instance of kcidb.oo.data.Type.
+            data:       The raw data of the object to represent.
+        """
+        assert isinstance(client, Client)
+        assert isinstance(type, Type)
+        assert LIGHT_ASSERTS or type.is_valid(data)
+        self._client = client
+        self._type = type
+        self._data = data
+
+    def get_id(self):
+        """
+        Retrieve a tuple of field values identifying the object globally.
+
+        Returns:
+            A tuple of values of object fields identifying it globally.
+        """
+        return self._type.get_id(self._data)
+
+    def __hash__(self):
+        return hash(self.get_id())
+
+    def __eq__(self, other):
+        return isinstance(other, Object) and self.get_id() == other.get_id()
+
+    def __getattr__(self, name):
+        if name in self._data:
+            return self._data[name]
+        id = self.get_id()
+        if name in self._type.parents:
+            response = self._client.query(
+                Request.parse(
+                    ">" + self._type.name + "%<" + name + "#",
+                    [[id]]
+                )
+            )
+            try:
+                return response[name][0]
+            except (KeyError, IndexError):
+                return None
+        if name.endswith("s"):
+            child_type_name = name[:-1]
+            if child_type_name in self._type.children:
+                return self._client.query(
+                    Request.parse(
+                        ">" + self._type.name + "%>" + child_type_name + "#",
+                        [[id]]
+                    )
+                )[child_type_name]
+        raise AttributeError(f"Attribute {name!r} not found")
+
+
+class Client:
+    """Object-oriented data client"""
+
+    def __init__(self, source):
+        """
+        Initialize the client.
+
+        Args:
+            source: Raw object-oriented data source, an instance of
+                    kcidb.oo.data.Source.
+        """
+        assert isinstance(source, Source)
+        self.source = source
+
+    def query(self, request_list):
+        """
+        Retrieve objects specified via a request list.
+
+        Args:
+            request_list:   A list of object branch requests ("Request"
+                            instances) to fulfill.
+        Returns:
+            A dictionary of object type names and lists containing retrieved
+            objects of the corresponding type.
+        """
+        assert isinstance(request_list, list)
+        assert all(isinstance(r, Request) for r in request_list)
+        return {
+            obj_type_name: [
+                Object(self, SCHEMA.types[obj_type_name], obj_data)
+                for obj_data in obj_data_list
+            ]
+            for obj_type_name, obj_data_list in
+            self.source.oo_query(request_list).items()
+        }
