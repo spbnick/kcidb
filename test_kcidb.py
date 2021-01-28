@@ -104,11 +104,11 @@ class KCIDBMainFunctionsTestCase(kcidb.unittest.TestCase):
             with patch("kcidb.Client"):
                 return function()
         """)
-        argv = ["kcidb.query_main", "-p", "project", "-d", "dataset"]
+        argv = ["kcidb.query_main", "-d", "bigquery:project.dataset"]
         self.assertExecutes("", *argv, driver_source=driver_source)
 
         argv = [
-            "kcidb.query_main", "-p", "project", "-d", "dataset",
+            "kcidb.query_main", "-d", "bigquery:project.dataset",
             "-c", "test:checkout:1", "-b", "test:build:1",
             "-t", "test:test:1",
             "--parents", "--children", "--objects-per-report", "10",
@@ -123,8 +123,9 @@ class KCIDBMainFunctionsTestCase(kcidb.unittest.TestCase):
             )))
             with patch("kcidb.Client", return_value=client) as Client:
                 status = function()
-            Client.assert_called_once_with(project_id="project",
-                                           dataset_name="dataset")
+            Client.assert_called_once_with(
+                database="bigquery:project.dataset"
+            )
             client.query_iter.assert_called_once_with(
                 ids=dict(checkouts=["test:checkout:1"],
                          builds=["test:build:1"],

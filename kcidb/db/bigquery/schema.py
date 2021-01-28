@@ -1,5 +1,5 @@
 """
-Kernel CI report database schema.
+Kernel CI BigQuery report database schema.
 
 Always corresponds to the latest I/O schema.
 """

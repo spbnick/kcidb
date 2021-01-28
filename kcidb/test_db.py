@@ -13,15 +13,16 @@ class KCIDBDBMainFunctionsTestCase(kcidb.unittest.TestCase):
 
     def test_init_main(self):
         """Check kcidb-db-init works"""
-        argv = ["kcidb.db.init_main", "-p", "project", "-d", "dataset"]
+        argv = ["kcidb.db.init_main", "-d", "bigquery:project.dataset"]
         driver_source = textwrap.dedent("""
             from unittest.mock import patch, Mock
             client = Mock()
             client.init = Mock()
+            client.is_initialized = Mock(return_value=False)
             with patch("kcidb.db.Client", return_value=client) as \
                     Client:
                 status = function()
-            Client.assert_called_once_with("dataset", project_id="project")
+            Client.assert_called_once_with("bigquery:project.dataset")
             client.init.assert_called_once()
             return status
         """)
@@ -29,15 +30,16 @@ class KCIDBDBMainFunctionsTestCase(kcidb.unittest.TestCase):
 
     def test_cleanup_main(self):
         """Check kcidb-db-cleanup works"""
-        argv = ["kcidb.db.cleanup_main", "-p", "project", "-d", "dataset"]
+        argv = ["kcidb.db.cleanup_main", "-d", "bigquery:project.dataset"]
         driver_source = textwrap.dedent("""
             from unittest.mock import patch, Mock
             client = Mock()
             client.cleanup = Mock()
+            client.is_initialized = Mock(return_value=True)
             with patch("kcidb.db.Client", return_value=client) as \
                     Client:
                 status = function()
-            Client.assert_called_once_with("dataset", project_id="project")
+            Client.assert_called_once_with("bigquery:project.dataset")
             client.cleanup.assert_called_once()
             return status
         """)
@@ -46,7 +48,7 @@ class KCIDBDBMainFunctionsTestCase(kcidb.unittest.TestCase):
     def test_dump_main(self):
         """Check kcidb-db-dump works"""
         empty = kcidb_io.new()
-        argv = ["kcidb.db.dump_main", "-p", "project", "-d", "dataset",
+        argv = ["kcidb.db.dump_main", "-d", "bigquery:project.dataset",
                 "--indent=0"]
 
         driver_source = textwrap.dedent(f"""
@@ -56,7 +58,7 @@ class KCIDBDBMainFunctionsTestCase(kcidb.unittest.TestCase):
             with patch("kcidb.db.Client", return_value=client) as \
                     Client:
                 status = function()
-            Client.assert_called_once_with("dataset", project_id="project")
+            Client.assert_called_once_with("bigquery:project.dataset")
             client.dump_iter.assert_called_once()
             return status
         """)
@@ -70,7 +72,7 @@ class KCIDBDBMainFunctionsTestCase(kcidb.unittest.TestCase):
             with patch("kcidb.db.Client", return_value=client) as \
                     Client:
                 status = function()
-            Client.assert_called_once_with("dataset", project_id="project")
+            Client.assert_called_once_with("bigquery:project.dataset")
             client.dump_iter.assert_called_once()
             return status
         """)
@@ -85,11 +87,11 @@ class KCIDBDBMainFunctionsTestCase(kcidb.unittest.TestCase):
             with patch("kcidb.db.Client"):
                 return function()
         """)
-        argv = ["kcidb.db.query_main", "-p", "project", "-d", "dataset"]
+        argv = ["kcidb.db.query_main", "-d", "bigquery:project.dataset"]
         self.assertExecutes("", *argv, driver_source=driver_source)
 
         argv = [
-            "kcidb.db.query_main", "-p", "project", "-d", "dataset",
+            "kcidb.db.query_main", "-d", "bigquery:project.dataset",
             "-c", "test:checkout:1", "-b", "test:build:1",
             "-t", "test:test:1",
             "--parents", "--children", "--objects-per-report", "10",
@@ -104,7 +106,7 @@ class KCIDBDBMainFunctionsTestCase(kcidb.unittest.TestCase):
             )))
             with patch("kcidb.db.Client", return_value=client) as Client:
                 status = function()
-            Client.assert_called_once_with("dataset", project_id="project")
+            Client.assert_called_once_with("bigquery:project.dataset")
             client.query_iter.assert_called_once_with(
                 ids=dict(checkouts=["test:checkout:1"],
                          builds=["test:build:1"],
@@ -131,7 +133,7 @@ class KCIDBDBMainFunctionsTestCase(kcidb.unittest.TestCase):
             with patch("kcidb.db.Client"):
                 return function()
         """)
-        argv = ["kcidb.db.load_main", "-p", "project", "-d", "dataset"]
+        argv = ["kcidb.db.load_main", "-d", "bigquery:project.dataset"]
 
         self.assertExecutes("", *argv, driver_source=driver_source)
         self.assertExecutes('{', *argv, driver_source=driver_source,
@@ -147,7 +149,7 @@ class KCIDBDBMainFunctionsTestCase(kcidb.unittest.TestCase):
             client.load = Mock()
             with patch("kcidb.db.Client", return_value=client) as Client:
                 status = function()
-            Client.assert_called_once_with("dataset", project_id="project")
+            Client.assert_called_once_with("bigquery:project.dataset")
             client.load.assert_called_once_with({repr(empty)})
             return status
         """)
@@ -160,7 +162,7 @@ class KCIDBDBMainFunctionsTestCase(kcidb.unittest.TestCase):
             client.load = Mock()
             with patch("kcidb.db.Client", return_value=client) as Client:
                 status = function()
-            Client.assert_called_once_with("dataset", project_id="project")
+            Client.assert_called_once_with("bigquery:project.dataset")
             assert client.load.call_count == 2
             client.load.assert_has_calls([call({repr(empty)}),
                                           call({repr(empty)})])
@@ -176,7 +178,7 @@ class KCIDBDBMainFunctionsTestCase(kcidb.unittest.TestCase):
             with patch("kcidb.db.Client"):
                 return function()
         """)
-        argv = ["kcidb.db.complement_main", "-p", "project", "-d", "dataset",
+        argv = ["kcidb.db.complement_main", "-d", "bigquery:project.dataset",
                 "--indent=0"]
 
         self.assertExecutes("", *argv, driver_source=driver_source)
@@ -196,7 +198,7 @@ class KCIDBDBMainFunctionsTestCase(kcidb.unittest.TestCase):
             client.complement = Mock(return_value={repr(report_b)})
             with patch("kcidb.db.Client", return_value=client) as Client:
                 status = function()
-            Client.assert_called_once_with("dataset", project_id="project")
+            Client.assert_called_once_with("bigquery:project.dataset")
             client.complement.assert_called_once_with({repr(report_a)})
             return status
         """)
@@ -210,7 +212,7 @@ class KCIDBDBMainFunctionsTestCase(kcidb.unittest.TestCase):
             client.complement = Mock(side_effect={repr((report_b, report_a))})
             with patch("kcidb.db.Client", return_value=client) as Client:
                 status = function()
-            Client.assert_called_once_with("dataset", project_id="project")
+            Client.assert_called_once_with("bigquery:project.dataset")
             assert client.complement.call_count == 2
             client.complement.assert_has_calls([call({repr(report_a)}),
                                                 call({repr(report_b)})])
@@ -340,5 +342,5 @@ class KCIDBDBClient(kcidb.unittest.TestCase):
         client.get_dataset = Mock(return_value=dataset)
         with patch("google.cloud.bigquery.Client", return_value=client), \
              patch("google.cloud.bigquery.job.LoadJobConfig"):
-            client = kcidb.db.Client("dataset")
+            client = kcidb.db.Client("bigquery:dataset")
             client.load(io_data)

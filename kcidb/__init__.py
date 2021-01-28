@@ -34,35 +34,49 @@ io_schema = io.schema
 LOGGER = logging.getLogger(__name__)
 
 
+class DatabaseNotInitialized(Exception):
+    """Database is not initialized exception"""
+    def __init__(self):
+        super().__init__("Database is not initialized")
+
+
 class Client:
     """Kernel CI reporting client"""
 
-    def __init__(self, project_id=None, dataset_name=None, topic_name=None):
+    def __init__(self, database=None, project_id=None, topic_name=None):
         """
         Initialize a reporting client
 
         Args:
-            project_id:     ID of the Google Cloud project hosting the report
-                            database infrastructure. Can be None to have
-                            submitting disabled.
-            dataset_name:   The name of the Kernel CI dataset to query reports
-                            from. The dataset should be located within the
-                            specified Google Cloud project. Can be None,
-                            to have querying disabled.
+            database:       The database specification string to use for
+                            accessing the report database.
+                            Can be None to have querying disabled.
+            project_id:     ID of the Google Cloud project hosting the message
+                            queue accepting submissions.
+                            Can be None to have submitting disabled.
             topic_name:     Name of the message queue topic to publish
                             submissions to. The message queue should be
                             located within the specified Google Cloud project.
                             Can be None, to have submitting disabled.
+
+        Raises:
+            `kcidb.DatabaseNotInitialized` if the database is not
+            initialized.
+            `kcidb.db.IncompatibleSchema` if the database schema
+            is incompatible with the latest I/O schema.
         """
+        assert database is None or \
+            isinstance(database, str) and database
         assert project_id is None or \
             isinstance(project_id, str) and project_id
-        assert dataset_name is None or \
-            isinstance(dataset_name, str) and dataset_name
         assert topic_name is None or \
             isinstance(topic_name, str) and topic_name
-        self.db_client = \
-            db.Client(dataset_name, project_id=project_id) if dataset_name \
-            else None
+        if database is None:
+            self.db_client = None
+        else:
+            self.db_client = db.Client(database)
+            if not self.db_client.is_initialized():
+                raise DatabaseNotInitialized()
         self.mq_publisher = \
             mq.Publisher(project_id, topic_name) if project_id and topic_name \
             else None
@@ -132,8 +146,6 @@ class Client:
         Raises:
             `NotImplementedError`, if not supplied with a dataset name at
             initialization time;
-            `IncompatibleSchema` if the dataset schema is incompatible with
-            the latest I/O schema.
         """
         assert ids is None or isinstance(ids, dict)
         if ids is None:
@@ -170,8 +182,6 @@ class Client:
         Raises:
             `NotImplementedError`, if not supplied with a dataset name at
             initialization time;
-            `IncompatibleSchema` if the dataset schema is incompatible with
-            the latest I/O schema.
         """
         assert ids is None or isinstance(ids, dict)
         if ids is None:
@@ -227,7 +237,7 @@ def query_main():
         "kcidb-query - Query Kernel CI reports"
     parser = db.QueryArgumentParser(description=description)
     args = parser.parse_args()
-    client = Client(project_id=args.project, dataset_name=args.dataset)
+    client = Client(database=args.database)
     query_iter = client.query_iter(
         ids=dict(checkouts=args.checkout_ids,
                  builds=args.build_ids,

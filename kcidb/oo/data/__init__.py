@@ -5,6 +5,7 @@ into objects, but without the object-oriented interface.
 
 import re
 import textwrap
+from abc import ABC, abstractmethod
 import jsonschema
 from kcidb.misc import LIGHT_ASSERTS
 
@@ -1003,10 +1004,10 @@ class Request:
         return request_list
 
 
-class Source:
+class Source(ABC):
     """An abstract source of raw object-oriented (OO) data"""
 
-    # It's OK, pylint: disable=too-few-public-methods
+    @abstractmethod
     def oo_query(self, request_list):
         """
         Retrieve raw data for objects specified via a request list.
@@ -1018,4 +1019,5 @@ class Source:
             A dictionary of object type names and lists containing retrieved
             raw data of the corresponding type.
         """
-        raise NotImplementedError
+        assert isinstance(request_list, list)
+        assert all(isinstance(r, Request) for r in request_list)
