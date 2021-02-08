@@ -176,10 +176,17 @@ class Driver(AbstractDriver):
 
         obj_num = 0
         data = io.new()
-        for obj_list_name in schema.TABLE_MAP:
+        for obj_list_name, fields in schema.TABLE_MAP.items():
             job_config = bigquery.job.QueryJobConfig(
                 default_dataset=self.dataset_ref)
-            query_string = f"SELECT * FROM `{obj_list_name}`"
+            field_names = [f.name for f in fields]
+            query_string = \
+                "SELECT " + \
+                ", ".join(
+                    f"ANY_VALUE(`{n}`) AS `{n}`" if n != "id" else f"`{n}`"
+                    for n in field_names
+                ) + \
+                f" FROM `{obj_list_name}` GROUP BY id"
             LOGGER.debug("Query string: %s", query_string)
             query_job = self.client.query(query_string, job_config=job_config)
             obj_list = None
@@ -229,9 +236,10 @@ class Driver(AbstractDriver):
         assert isinstance(objects_per_report, int)
         assert objects_per_report >= 0
 
-        # A dictionary of object list names and tuples containing a SELECT
-        # statement and the list of its parameters, returning IDs of the
-        # objects to fetch.
+        # A dictionary of object list names and three-element lists,
+        # containing a SELECT statement (returning IDs of the objects to
+        # fetch), the list of its parameters, and the list of field names of
+        # the object's table.
         obj_list_queries = {
             obj_list_name: [
                 "SELECT id FROM UNNEST(?) AS id\n",
@@ -239,7 +247,8 @@ class Driver(AbstractDriver):
                     bigquery.ArrayQueryParameter(
                         None, "STRING", ids.get(obj_list_name, [])
                     ),
-                ]
+                ],
+                [f.name for f in schema.TABLE_MAP[obj_list_name]]
             ]
             for obj_list_name in io.schema.LATEST.tree if obj_list_name
         }
@@ -292,11 +301,18 @@ class Driver(AbstractDriver):
         obj_num = 0
         data = io.new()
         for obj_list_name, query in obj_list_queries.items():
+            field_names = query[2]
             query_parameters = query[1]
             query_string = \
-                f"SELECT * FROM {obj_list_name} INNER JOIN (\n" + \
+                "SELECT " + \
+                ", ".join(
+                    f"ANY_VALUE(`{n}`) AS `{n}`" if n != "id" else f"`{n}`"
+                    for n in field_names
+                ) + "\n" + \
+                f"FROM `{obj_list_name}` INNER JOIN (\n" + \
                 textwrap.indent(query[0], " " * 4) + \
-                ") USING(id)\n"
+                ") USING(id)\n" + \
+                "GROUP BY id\n"
             LOGGER.debug("Query string: %s", query_string)
             LOGGER.debug("Query params: %s", query_parameters)
             job_config = bigquery.job.QueryJobConfig(
