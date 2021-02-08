@@ -402,6 +402,8 @@ def complement_main():
     parser = OutputArgumentParser(description=description)
     args = parser.parse_args()
     client = Client(args.database)
+    if not client.is_initialized():
+        raise Exception(f"Database {args.database!r} is not initialized")
     kcidb.misc.json_dump_stream(
         (
             client.complement(
@@ -421,6 +423,8 @@ def dump_main():
     parser = SplitOutputArgumentParser(description=description)
     args = parser.parse_args()
     client = Client(args.database)
+    if not client.is_initialized():
+        raise Exception(f"Database {args.database!r} is not initialized")
     kcidb.misc.json_dump_stream(
         client.dump_iter(args.objects_per_report),
         sys.stdout, indent=args.indent, seq=args.seq
@@ -435,6 +439,8 @@ def query_main():
     parser = QueryArgumentParser(description=description)
     args = parser.parse_args()
     client = Client(args.database)
+    if not client.is_initialized():
+        raise Exception(f"Database {args.database!r} is not initialized")
     query_iter = client.query_iter(
         ids=dict(checkouts=args.checkout_ids,
                  builds=args.build_ids,
@@ -492,6 +498,8 @@ def load_main():
     parser = ArgumentParser(description=description)
     args = parser.parse_args()
     client = Client(args.database)
+    if not client.is_initialized():
+        raise Exception(f"Database {args.database!r} is not initialized")
     for data in kcidb.misc.json_load_stream_fd(sys.stdin.fileno()):
         data = io.schema.upgrade(io.schema.validate(data), copy=False)
         client.load(data)
@@ -505,7 +513,7 @@ def init_main():
     args = parser.parse_args()
     client = Client(args.database)
     if client.is_initialized():
-        raise Exception("The database is already initialized")
+        raise Exception(f"Database {args.database!r} is already initialized")
     client.init()
 
 
@@ -516,5 +524,6 @@ def cleanup_main():
     parser = ArgumentParser(description=description)
     args = parser.parse_args()
     client = Client(args.database)
-    if client.is_initialized():
-        client.cleanup()
+    if not client.is_initialized():
+        raise Exception(f"Database {args.database!r} is not initialized")
+    client.cleanup()
