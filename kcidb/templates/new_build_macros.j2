@@ -21,7 +21,7 @@
             {% set build_fmt =
                 "%" +
                 ((8 + container.architecture_valid_builds |
-                  map("length") | max ) | string) +
+                  map("default", "", true) | map("length") | max ) | string) +
                 "s" +
                 (("  %s %" +
                   (invalid_build_count | string | length | string) + "s")

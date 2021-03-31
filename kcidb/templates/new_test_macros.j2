@@ -70,7 +70,7 @@
             {% for node in failed_nodes[:max_list_len] %}
                 {{- "        " +
                     waived_status_emoji(node.waived, node.status) +
-                    " " + node.path
+                    " " + node.path | default("?", true)
                 }}
             {% endfor %}
             {% if failed_nodes | length > max_list_len %}
