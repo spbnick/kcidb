@@ -38,7 +38,7 @@ class MatchOOTestCase(unittest.TestCase):
                     "misc": {
                         "pipeline_id": 467715
                     },
-                    "id": "test:1",
+                    "id": "non_test:1",
                     "origin": "non_test",
                     "patchset_files": [],
                     "valid": True,
