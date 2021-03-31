@@ -3,8 +3,7 @@
 import re
 import base64
 from email.message import EmailMessage
-from kcidb_io import schema
-from kcidb import oo
+import kcidb.oo
 from kcidb.monitor.misc import is_valid_firestore_id
 
 # We like the "id" name
@@ -90,16 +89,16 @@ class Notification:
         return base64.b64decode(id_part, altchars=b'+-',
                                 validate=True).decode()
 
-    def __init__(self, obj_list_name, obj, subscription, message):
+    def __init__(self, obj_type_name, obj, subscription, message):
         """
         Initialize a notification.
 
         Args:
-            obj_list_name:  Name of the object list (e.g. "checkouts") to
-                            which the object notified about belongs (and
-                            therefore its type).
+            obj_type_name:  Name of the object type (e.g. "revision") to
+                            which the object notified about belongs.
             obj:            Object-oriented representation of the object
-                            being notified about.
+                            being notified about (an instance of
+                            kcidb.oo.Object).
             subscription:   The name of the subscription which generated the
                             notification (e.g. the name of subscription
                             module).
@@ -109,22 +108,21 @@ class Notification:
             message:        Notification message. An instance of
                             NotificationMessage.
         """
-        assert isinstance(obj_list_name, str)
-        assert obj_list_name
-        assert obj_list_name in schema.LATEST.tree
-        assert isinstance(obj, oo.Node)
+        assert isinstance(obj_type_name, str)
+        assert obj_type_name
+        assert isinstance(obj, kcidb.oo.Object)
         assert isinstance(subscription, str)
         assert SUBSCRIPTION_RE.fullmatch(subscription)
         assert len(subscription.encode()) <= 64
         assert isinstance(message, NotificationMessage)
 
-        self.obj_list_name = obj_list_name
+        self.obj_type_name = obj_type_name
         self.obj = obj
         self.subscription = subscription
         self.message = message
         id = self.subscription + ":" + \
-            self.obj_list_name + ":" + \
-            Notification._to_id_part(obj.id) + ":" + \
+            self.obj_type_name + ":" + \
+            Notification._to_id_part(repr(obj.get_id())) + ":" + \
             Notification._to_id_part(message.id)
         assert is_valid_firestore_id(id)
         self.id = id

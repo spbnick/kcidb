@@ -3,8 +3,6 @@
 import sys
 import email
 import logging
-import jsonschema
-import jq
 import kcidb_io as io
 from kcidb import db, mq, orm, oo, monitor, tests, unittest, misc
 from kcidb.misc import LIGHT_ASSERTS
@@ -355,41 +353,16 @@ def notify_main():
     """Execute the kcidb-notify command-line tool"""
     sys.excepthook = misc.log_and_print_excepthook
     description = 'kcidb-notify - Generate notifications for new I/O data'
-    parser = misc.ArgumentParser(description=description)
-    parser.add_argument(
-        'base',
-        metavar='BASE_FILE',
-        nargs='?',
-        help='Path to a JSON file with base I/O data'
-    )
+    parser = oo.ArgumentParser(database="json", description=description)
     args = parser.parse_args()
-
-    base = io.new()
-    if args.base is not None:
-        try:
-            with open(args.base, "r") as json_file:
-                base_reports = [
-                    io.schema.validate(data)
-                    for data in misc.json_load_stream_fd(json_file.fileno())
-                ]
-                base = io.merge(base, base_reports,
-                                copy_target=False, copy_sources=False)
-        except (jq.JSONParseError,
-                jsonschema.exceptions.ValidationError) as err:
-            raise Exception("Failed reading base file") from err
-
-    try:
-        for new in misc.json_load_stream_fd(sys.stdin.fileno()):
-            new = io.schema.validate(new)
-            for notification in monitor.match_new_io(base, new):
-                sys.stdout.write(
-                    notification.render().
-                    as_string(policy=email.policy.SMTPUTF8)
-                )
-                sys.stdout.write("\x00")
-                sys.stdout.flush()
-            base = io.merge(base, [new],
-                            copy_target=False, copy_sources=False)
-    except (jq.JSONParseError,
-            jsonschema.exceptions.ValidationError) as err:
-        raise Exception("Failed reading new I/O data") from err
+    oo_client = oo.Client(db.Client(args.database))
+    pattern_list = []
+    for pattern_string in args.pattern_strings:
+        pattern_list += orm.Pattern.parse(pattern_string)
+    for notification in monitor.match(oo_client.query(pattern_list)):
+        sys.stdout.write(
+            notification.render().
+            as_string(policy=email.policy.SMTPUTF8)
+        )
+        sys.stdout.write("\x00")
+        sys.stdout.flush()

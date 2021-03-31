@@ -349,22 +349,25 @@ class KCIDBMainFunctionsTestCase(kcidb.unittest.TestCase):
 
     def test_notify_main(self):
         """Check kcidb-notify works"""
-        self.assertExecutes('', "kcidb.notify_main")
-        self.assertExecutes('{', "kcidb.notify_main",
+        self.assertExecutes('', "kcidb.notify_main", ">*#")
+        self.assertExecutes('{', "kcidb.notify_main", ">*#",
                             status=1, stderr_re=".*JSONParseError.*")
-        self.assertExecutes('{}', "kcidb.notify_main",
+        self.assertExecutes('{}', "kcidb.notify_main", ">*#",
                             status=1, stderr_re=".*ValidationError.*")
 
         empty = json.dumps(dict(version=dict(major=4, minor=0)))
-        self.assertExecutes(empty, "kcidb.notify_main")
-        self.assertExecutes(empty + empty, "kcidb.notify_main")
+        self.assertExecutes(empty, "kcidb.notify_main", ">*#")
+        self.assertExecutes(empty + empty, "kcidb.notify_main", ">*#")
 
-        git_commit_hash = "4ff6a2469104218a044ff595a0c1eb469ca7ea01"
-        build_fail = json.dumps(dict(
+        git_commit_hash1 = "4ff6a2469104218a044ff595a0c1eb469ca7ea01"
+        git_commit_hash2 = "fe3fc1bc47d6333d7d06bc530c6e0c1044bab536"
+
+        one_of_everything = json.dumps(dict(
             version=dict(major=4, minor=0),
             checkouts=[
                 dict(id="test:checkout:1",
-                     git_commit_hash=git_commit_hash,
+                     git_commit_hash=git_commit_hash1,
+                     patchset_hash="",
                      origin="test")
             ],
             builds=[
@@ -372,14 +375,65 @@ class KCIDBMainFunctionsTestCase(kcidb.unittest.TestCase):
                      origin="test",
                      checkout_id="test:checkout:1",
                      valid=False)
+            ],
+            tests=[
+                dict(id="test:test:1",
+                     origin="test",
+                     build_id="test:build:1",
+                     waived=False,
+                     status="PASS")
             ]
         ))
 
-        self.assertExecutes(build_fail, "kcidb.notify_main",
-                            stdout_re="Subject: Test checkout: .*\x00"
-                                      "Subject: Test build: .*\x00")
-        self.assertExecutes(build_fail + build_fail, "kcidb.notify_main",
-                            stdout_re="Subject: Test checkout: .*\x00"
-                                      "Subject: Test build: .*\x00"
+        self.assertExecutes(one_of_everything, "kcidb.notify_main", ">*#",
+                            stdout_re="Subject: Test revision: .*\x00"
                                       "Subject: Test checkout: .*\x00"
-                                      "Subject: Test build: .*\x00")
+                                      "Subject: Test build: .*\x00"
+                                      "Subject: Test test: .*\x00")
+
+        two_of_everything = json.dumps(dict(
+            version=dict(major=4, minor=0),
+            checkouts=[
+                dict(id="test:checkout:1",
+                     git_commit_hash=git_commit_hash1,
+                     patchset_hash="",
+                     origin="test"),
+                dict(id="test:checkout:2",
+                     git_commit_hash=git_commit_hash2,
+                     patchset_hash="",
+                     origin="test"),
+            ],
+            builds=[
+                dict(id="test:build:1",
+                     origin="test",
+                     checkout_id="test:checkout:1",
+                     valid=False),
+                dict(id="test:build:2",
+                     origin="test",
+                     checkout_id="test:checkout:2",
+                     valid=False),
+            ],
+            tests=[
+                dict(id="test:test:1",
+                     origin="test",
+                     build_id="test:build:1",
+                     waived=False,
+                     status="PASS"),
+                dict(id="test:test:2",
+                     origin="test",
+                     build_id="test:build:2",
+                     waived=False,
+                     status="FAIL"),
+            ]
+        ))
+
+        self.assertExecutes(two_of_everything,
+                            "kcidb.notify_main", ">*#",
+                            stdout_re="Subject: Test revision: .*\x00"
+                                      "Subject: Test revision: .*\x00"
+                                      "Subject: Test checkout: .*\x00"
+                                      "Subject: Test checkout: .*\x00"
+                                      "Subject: Test build: .*\x00"
+                                      "Subject: Test build: .*\x00"
+                                      "Subject: Test test: .*\x00"
+                                      "Subject: Test test: .*\x00")

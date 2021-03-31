@@ -2,15 +2,15 @@
 
 import unittest
 from kcidb_io import schema
-from kcidb import oo, monitor
+from kcidb import orm, db, oo, monitor
 
 # Disable long line checking for JSON data
 # flake8: noqa
 # pylint: disable=line-too-long
 
 
-class MatchOOTestCase(unittest.TestCase):
-    """kcidb.monitor.match_oo test case"""
+class MatchTestCase(unittest.TestCase):
+    """kcidb.monitor.match test case"""
 
     def setUp(self):
         """Setup tests"""
@@ -24,7 +24,10 @@ class MatchOOTestCase(unittest.TestCase):
     def test_min(self):
         """Check minimal matching"""
 
-        oo_data = oo.from_io({
+        db_client = db.Client("sqlite::memory:")
+        db_client.init()
+        oo_client = oo.Client(db_client)
+        db_client.load({
             "version": self.version,
             "checkouts": [
                 {
@@ -34,6 +37,7 @@ class MatchOOTestCase(unittest.TestCase):
                     "start_time": "2020-03-02T15:16:15.790000+00:00",
                     "git_repository_branch": "wip/jgg-for-next",
                     "git_commit_hash": "5e29d1443c46b6ca70a4c940a67e8c09f05dcb7e",
+                    "patchset_hash": "",
                     "git_repository_url": "git://git.kernel.org/pub/scm/linux/kernel/git/rdma/rdma.git",
                     "misc": {
                         "pipeline_id": 467715
@@ -50,6 +54,7 @@ class MatchOOTestCase(unittest.TestCase):
                     "start_time": "2020-03-02T15:16:15.790000+00:00",
                     "git_repository_branch": "wip/jgg-for-next",
                     "git_commit_hash": "1254e88b4fc1470d152f494c3590bb6a33ab33eb",
+                    "patchset_hash": "",
                     "git_repository_url": "git://git.kernel.org/pub/scm/linux/kernel/git/rdma/rdma.git",
                     "misc": {
                         "pipeline_id": 467715
@@ -181,19 +186,17 @@ class MatchOOTestCase(unittest.TestCase):
                 },
             ],
         })
-
-        notifications = monitor.match_oo(oo_data)
-        self.assertEqual(len(notifications), 3)
+        oo_data = oo_client.query(orm.Pattern.parse(">*#"))
+        notifications = monitor.match(oo_data)
+        self.assertEqual(len(notifications), 4)
         for notification in notifications:
-            obj_list_name = notification.obj_list_name
-            assert obj_list_name.endswith("s")
-            obj_name = obj_list_name[:-1]
+            obj_type_name = notification.obj_type_name
             self.assertIsInstance(notification, monitor.output.Notification)
             message = notification.render()
             self.assertIsNone(message['From'])
             self.assertEqual(message['To'], "test@kernelci.org")
             self.assertEqual(message['X-KCIDB-Notification-Message-ID'],
-                             obj_name)
-            self.assertIn(f"Test {obj_name}: ", message['Subject'])
-            self.assertIn(f"Test {obj_name} detected!\n\n",
+                             obj_type_name)
+            self.assertIn(f"Test {obj_type_name}: ", message['Subject'])
+            self.assertIn(f"Test {obj_type_name} detected!\n\n",
                           message.get_payload())

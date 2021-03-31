@@ -2,7 +2,7 @@
 
 import pkgutil
 import importlib
-import kcidb_io as io
+import kcidb.oo
 
 __all__ = [
     "MATCH_MAP"
@@ -14,7 +14,7 @@ def _load_match_map():
     Load subscription match functions from kcidb.subscriptions.* modules.
 
     Returns:
-        A dictionary of object list names and a list of tuples, each
+        A dictionary of object type names and a list of tuples, each
         containing a subscription name (subscription module name) and the
         object type's matching function. The matching function accepts an
         object of corresponding type, and returns an iterable of
@@ -22,23 +22,20 @@ def _load_match_map():
         to an empty iterable.
     """
     match_map = {
-        obj_list_name: []
-        for obj_list_name in io.schema.LATEST.tree
-        if obj_list_name
+        obj_type_name: []
+        for obj_type_name in kcidb.oo.CLASSES
     }
 
     # For each kcidb.subscriptions.* module
     for _, module_name, _ in pkgutil.walk_packages(path=__path__):
         module = importlib.import_module(__name__ + "." + module_name)
         # For each object list name
-        for obj_list_name in match_map:
-            # Record the subscription (module) name and match function, if any
-            assert obj_list_name.endswith("s")
-            function_name = "match_" + obj_list_name[:-1]
+        for obj_type_name in match_map:
+            function_name = "match_" + obj_type_name
             if function_name in module.__dict__:
                 function = module.__dict__[function_name]
                 assert callable(function)
-                match_map[obj_list_name].append((module_name, function))
+                match_map[obj_type_name].append((module_name, function))
 
     return match_map
 

@@ -745,7 +745,7 @@ CLASSES = dict(
     test=NewTest,
 )
 
-assert set(CLASSES) & set(SCHEMA.types) == set(SCHEMA.types)
+assert set(CLASSES) == set(SCHEMA.types)
 
 
 class Client:
